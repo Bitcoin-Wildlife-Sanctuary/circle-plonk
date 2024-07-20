@@ -48,9 +48,10 @@ impl Circuit {
         circuit
     }
 
-    pub fn new_gate(&mut self, poly_op: M31, idx_a: usize, idx_b: usize) -> usize {
+    pub fn new_gate(&mut self, poly_op: M31, idx_a: usize, idx_b: usize, output_value: M31) -> usize {
         let idx = self.num_gates;
         self.num_gates += 1;
+        self.output_wires.push(output_value);
         self.op.push(poly_op);
         self.idx_a.push(idx_a);
         self.idx_b.push(idx_b);
@@ -60,11 +61,24 @@ impl Circuit {
     }
 
     pub fn new_constant(&mut self, constant: M31) -> usize {
-        self.new_gate(constant, 1, 0)
+        self.new_gate(constant, 1, 0, constant)
     }
 
     pub fn mul_by_constant(&mut self, idx: usize, constant: M31) -> usize {
-        self.new_gate(constant, idx, 0)
+        let value = self.get_output_wire(idx) * constant;
+        self.new_gate(constant, idx, 0, value)
+    }
+
+    pub fn new_input(&mut self, input: M31) -> usize {
+        let idx = self.num_gates;
+        self.num_gates += 1;
+        self.output_wires.push(input);
+        self.op.push(M31::one());
+        self.idx_a.push(idx);
+        self.idx_b.push(0);
+        self.mult.push(1);
+
+        idx
     }
 
     pub fn get_output_wire(&self, idx: usize) -> M31 {
