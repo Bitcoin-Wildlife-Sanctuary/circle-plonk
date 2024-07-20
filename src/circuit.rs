@@ -1,4 +1,4 @@
-use ark_ff::Zero;
+use ark_ff::{One, Zero};
 use stwo_prover::core::fields::m31::M31;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -15,63 +15,89 @@ impl Default for Mode {
 
 #[derive(Default)]
 pub struct Circuit {
-    pub num_witness_elements: usize,
-    pub constraints: Vec<Constraint>,
+    pub num_gates: usize,
     pub mode: Mode,
-    pub witness_values: Vec<M31>,
-}
+    pub output_wires: Vec<M31>,
 
-#[derive(Debug)]
-pub struct Constraint {
-    pub q_l: M31,
-    pub q_r: M31,
-    pub q_m: M31,
-    pub q_o: M31,
-    pub q_c: M31,
-
-    pub w_l: usize,
-    pub w_r: usize,
-    pub w_o: usize,
-
-    pub pi: M31,
+    pub op: Vec<M31>,
+    pub idx_a: Vec<usize>,
+    pub idx_b: Vec<usize>,
+    pub mult: Vec<usize>,
 }
 
 impl Circuit {
     pub fn new() -> Circuit {
-        Circuit::default()
+        let mut circuit = Self::default();
+
+        // push zero
+        circuit.num_gates += 1;
+        circuit.output_wires.push(M31::zero());
+        circuit.op.push(M31::one());
+        circuit.idx_a.push(0);
+        circuit.idx_b.push(0);
+        circuit.mult.push(0);
+
+        // push one (needs to be externally enforced)
+        circuit.num_gates += 1;
+        circuit.output_wires.push(M31::one());
+        circuit.op.push(M31::zero());
+        circuit.idx_a.push(1);
+        circuit.idx_b.push(1);
+        circuit.mult.push(2);
+
+        circuit
     }
 
-    pub fn new_variable(&mut self, value: M31) -> usize {
-        let var = self.num_witness_elements;
-        self.num_witness_elements += 1;
+    pub fn new_gate(&mut self, poly_op: M31, idx_a: usize, idx_b: usize) -> usize {
+        let idx = self.num_gates;
+        self.num_gates += 1;
+        self.op.push(poly_op);
+        self.idx_a.push(idx_a);
+        self.idx_b.push(idx_b);
+        self.mult.push(0);
 
-        self.witness_values.push(value);
-
-        var
+        idx
     }
 
-    pub fn new_constraint(&mut self, constraint: Constraint) {
-        self.constraints.push(constraint);
+    pub fn new_constant(&mut self, constant: M31) -> usize {
+        self.new_gate(constant, 1, 0)
     }
 
-    pub fn get_value(&self, idx: usize) -> M31 {
-        self.witness_values[idx]
+    pub fn mul_by_constant(&mut self, idx: usize, constant: M31) -> usize {
+        self.new_gate(constant, idx, 0)
+    }
+
+    pub fn get_output_wire(&self, idx: usize) -> M31 {
+        self.output_wires[idx]
+    }
+
+    pub fn increase_output_count(&mut self, idx: usize) {
+        self.mult[idx] += 1;
     }
 
     pub fn is_satisfied(&self) -> bool {
-        for constraint in self.constraints.iter() {
+        assert_eq!(self.num_gates, self.output_wires.len());
+        assert_eq!(self.num_gates, self.op.len());
+        assert_eq!(self.num_gates, self.idx_a.len());
+        assert_eq!(self.num_gates, self.idx_b.len());
+        assert_eq!(self.num_gates, self.mult.len());
+
+        for (((&output_wire, &op), &idx_a), &idx_b) in self
+            .output_wires
+            .iter()
+            .zip(self.op.iter())
+            .zip(self.idx_a.iter())
+            .zip(self.idx_b.iter())
+        {
             let mut sum = M31::zero();
 
-            let w_l = self.get_value(constraint.w_l);
-            let w_r = self.get_value(constraint.w_r);
-            let w_o = self.get_value(constraint.w_o);
+            let w_a = self.get_output_wire(idx_a);
+            let w_b = self.get_output_wire(idx_b);
+            let w_c = output_wire;
 
-            sum += constraint.q_l * w_l;
-            sum += constraint.q_r * w_r;
-            sum += constraint.q_m * w_l * w_r;
-            sum += constraint.q_o * w_o;
-            sum += constraint.q_c;
-            sum -= constraint.pi;
+            sum += op * (w_a + w_b);
+            sum += (M31::one() - op) * w_a * w_b;
+            sum -= w_c;
 
             if !sum.is_zero() {
                 return false;
