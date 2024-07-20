@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::ops::Neg;
 use ark_ff::{One, Zero};
 use stwo_prover::core::fields::m31::M31;
@@ -24,6 +25,8 @@ pub struct Circuit {
     pub idx_a: Vec<usize>,
     pub idx_b: Vec<usize>,
     pub mult: Vec<usize>,
+
+    pub constant_maps: HashMap<M31, usize>,
 }
 
 impl Circuit {
@@ -70,7 +73,13 @@ impl Circuit {
     }
 
     pub fn new_constant(&mut self, constant: M31) -> usize {
-        self.new_gate(constant, 1, 0)
+        if self.constant_maps.contains_key(&constant) {
+            *self.constant_maps.get(&constant).unwrap()
+        } else {
+            let idx = self.new_gate(constant, 1, 0);
+            self.constant_maps.insert(constant, idx);
+            idx
+        }
     }
 
     pub fn add(&mut self, idx_a: usize, idx_b: usize) -> usize {
