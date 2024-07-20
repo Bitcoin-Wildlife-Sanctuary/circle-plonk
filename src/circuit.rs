@@ -1,3 +1,4 @@
+use std::ops::Neg;
 use ark_ff::{One, Zero};
 use stwo_prover::core::fields::m31::M31;
 
@@ -50,15 +51,17 @@ impl Circuit {
 
     pub fn new_gate(
         &mut self,
-        poly_op: M31,
+        op: M31,
         idx_a: usize,
         idx_b: usize,
-        output_value: M31,
     ) -> usize {
+        let value = op * (self.get_output_wire(idx_a) + self.get_output_wire(idx_b))
+            + (M31::one() - op) * self.get_output_wire(idx_a) * self.get_output_wire(idx_b);
+
         let idx = self.num_gates;
         self.num_gates += 1;
-        self.output_wires.push(output_value);
-        self.op.push(poly_op);
+        self.output_wires.push(value);
+        self.op.push(op);
         self.idx_a.push(idx_a);
         self.idx_b.push(idx_b);
         self.mult.push(0);
@@ -67,17 +70,19 @@ impl Circuit {
     }
 
     pub fn new_constant(&mut self, constant: M31) -> usize {
-        self.new_gate(constant, 1, 0, constant)
+        self.new_gate(constant, 1, 0)
     }
 
     pub fn add(&mut self, idx_a: usize, idx_b: usize) -> usize {
-        let value = self.get_output_wire(idx_a) + self.get_output_wire(idx_b);
-        self.new_gate(M31::one(), idx_a, idx_b, value)
+        self.new_gate(M31::one(), idx_a, idx_b)
+    }
+
+    pub fn neg(&mut self, idx: usize) -> usize {
+        self.mul_by_constant(idx, M31::one().neg())
     }
 
     pub fn mul_by_constant(&mut self, idx: usize, constant: M31) -> usize {
-        let value = self.get_output_wire(idx) * constant;
-        self.new_gate(constant, idx, 0, value)
+        self.new_gate(constant, idx, 0)
     }
 
     pub fn new_input(&mut self, input: M31) -> usize {
