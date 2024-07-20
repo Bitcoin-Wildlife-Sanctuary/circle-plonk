@@ -81,6 +81,16 @@ impl Circuit {
         self.mul_by_constant(idx, M31::one().neg())
     }
 
+    pub fn zero_test(&mut self, idx: usize) {
+        let helper = self.num_gates;
+        self.num_gates += 1;
+        self.output_wires.push(M31::zero()); // it can be any value
+        self.op.push(M31::one());
+        self.idx_a.push(idx);
+        self.idx_b.push(helper);
+        self.mult.push(1);
+    }
+
     pub fn mul_by_constant(&mut self, idx: usize, constant: M31) -> usize {
         self.new_gate(constant, idx, 0)
     }
