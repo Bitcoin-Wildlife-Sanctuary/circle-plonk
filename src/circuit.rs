@@ -1,6 +1,6 @@
+use ark_ff::{One, Zero};
 use std::collections::HashMap;
 use std::ops::Neg;
-use ark_ff::{One, Zero};
 use stwo_prover::core::fields::m31::M31;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -52,12 +52,7 @@ impl Circuit {
         circuit
     }
 
-    pub fn new_gate(
-        &mut self,
-        op: M31,
-        idx_a: usize,
-        idx_b: usize,
-    ) -> usize {
+    pub fn new_gate(&mut self, op: M31, idx_a: usize, idx_b: usize) -> usize {
         let value = op * (self.get_output_wire(idx_a) + self.get_output_wire(idx_b))
             + (M31::one() - op) * self.get_output_wire(idx_a) * self.get_output_wire(idx_b);
 
@@ -84,6 +79,10 @@ impl Circuit {
 
     pub fn add(&mut self, idx_a: usize, idx_b: usize) -> usize {
         self.new_gate(M31::one(), idx_a, idx_b)
+    }
+
+    pub fn mul(&mut self, idx_a: usize, idx_b: usize) -> usize {
+        self.new_gate(M31::zero(), idx_a, idx_b)
     }
 
     pub fn neg(&mut self, idx: usize) -> usize {
