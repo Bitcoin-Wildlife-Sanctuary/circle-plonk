@@ -1,3 +1,13 @@
+`from_r1cs/circom/r1cs_constraint_processor.rs` will be under a different license because its code is
+largely based on the implementation in snarkjs, which is under GNU GPL 3.0
+
+Please refer to this link for the license.
+https://github.com/iden3/snarkjs/blob/master/COPYING
+
+==================================================================
+
+For all the files other than `from_r1cs/circom/r1cs_constraint_processor.rs`:
+
 MIT License
 
 Copyright (c) 2024 Bitcoin Wildlife Sanctuary

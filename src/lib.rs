@@ -3,3 +3,5 @@
 pub mod field;
 
 pub mod circuit;
+
+pub mod from_r1cs;
