@@ -4,6 +4,7 @@ use ark_std::UniformRand;
 use std::collections::HashMap;
 use std::ops::Neg;
 use stwo_prover::core::fields::m31::M31;
+use stwo_prover::core::fields::qm31::QM31;
 use stwo_prover::core::fields::FieldExpOps;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -30,7 +31,6 @@ pub struct Circuit {
     pub mult: Vec<usize>,
 
     pub input_maps: Vec<(usize, M31)>,
-
     pub constant_maps: HashMap<M31, usize>,
 }
 
@@ -178,7 +178,7 @@ impl Circuit {
         let num_rows = self.num_rows;
 
         let next_power_of_2 = num_rows.next_power_of_two();
-        for _ in 0..next_power_of_2 {
+        for _ in self.num_rows..next_power_of_2 {
             self.num_rows += 1;
             self.output_wires.push(M31::zero());
             self.op.push(M31::zero());
@@ -192,10 +192,10 @@ impl Circuit {
     }
 
     pub fn is_logup_satisfied<R: RngCore>(&self, prng: &mut R, inputs: &[(usize, M31)]) -> bool {
-        let alpha = M31::rand(prng);
-        let z = M31::rand(prng);
+        let alpha = QM31::rand(prng);
+        let z = QM31::rand(prng);
 
-        let mut sum = M31::zero();
+        let mut sum = QM31::zero();
 
         if self.num_rows > 0 {
             let mut denominators = vec![];
@@ -205,8 +205,8 @@ impl Circuit {
                 denominators.push(M31::from(idx_c) + alpha * self.output_wires[idx_c] - z);
             }
 
-            let mut denominator_inverses = vec![M31::zero(); denominators.len()];
-            M31::batch_inverse(&denominators, &mut denominator_inverses);
+            let mut denominator_inverses = vec![QM31::zero(); denominators.len()];
+            QM31::batch_inverse(&denominators, &mut denominator_inverses);
 
             for (group, &mult) in denominator_inverses.chunks_exact(3).zip(self.mult.iter()) {
                 sum += group[0];
@@ -221,8 +221,8 @@ impl Circuit {
                 denominators.push(M31::from(id) + alpha * v - z);
             }
 
-            let mut denominator_inverses = vec![M31::zero(); denominators.len()];
-            M31::batch_inverse(&denominators, &mut denominator_inverses);
+            let mut denominator_inverses = vec![QM31::zero(); denominators.len()];
+            QM31::batch_inverse(&denominators, &mut denominator_inverses);
 
             for &v in denominator_inverses.iter() {
                 sum -= v;
