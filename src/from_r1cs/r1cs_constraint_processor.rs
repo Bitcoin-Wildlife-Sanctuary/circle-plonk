@@ -28,13 +28,15 @@ use stwo_prover::core::fields::m31::M31;
 pub struct OnDemandAllocator {
     pub assignments: Vec<M31>,
     pub mapping: HashMap<usize, usize>,
+    pub num_input: usize,
 }
 
 impl OnDemandAllocator {
-    pub fn new(assignments: Vec<M31>) -> Self {
+    pub fn new(assignments: Vec<M31>, num_input: usize) -> Self {
         Self {
             assignments,
             mapping: HashMap::new(),
+            num_input,
         }
     }
 
@@ -42,7 +44,11 @@ impl OnDemandAllocator {
         if let Some(&v) = self.mapping.get(&idx) {
             v
         } else {
-            let v = circuit.new_input(self.assignments[idx]);
+            let v = if idx < self.num_input {
+                circuit.new_input(self.assignments[idx])
+            } else {
+                circuit.new_witness(self.assignments[idx])
+            };
             self.mapping.insert(idx, v);
             v
         }
@@ -89,7 +95,7 @@ pub fn generate_circuit<C: ConstraintSynthesizer<FM31>>(
         assignments.resize(num_variables, M31::zero());
     }
 
-    let mut allocator = OnDemandAllocator::new(assignments);
+    let mut allocator = OnDemandAllocator::new(assignments, cs.num_instance_variables());
 
     let mut output = Circuit::new();
 

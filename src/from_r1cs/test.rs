@@ -83,10 +83,11 @@ fn test_conversion() {
 
     for _ in 0..10 {
         let circuit = generate_circuit(test_circuit.clone(), Mode::PROVE).unwrap();
-        assert!(circuit.is_satisfied());
-        assert_eq!(circuit.num_gates, 29266);
+        assert!(circuit.is_constraint_satisfied());
+        assert!(circuit.is_logup_satisfied(&mut prng, &circuit.input_maps));
+        assert_eq!(circuit.num_rows, 29265);
     }
 
     let circuit = generate_circuit(test_circuit, Mode::INDEX).unwrap();
-    assert_eq!(circuit.num_gates, 29266);
+    assert_eq!(circuit.num_rows, 29265);
 }

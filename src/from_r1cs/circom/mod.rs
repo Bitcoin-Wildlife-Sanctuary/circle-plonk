@@ -111,6 +111,7 @@ mod test {
     use crate::from_r1cs::circom::load_r1cs_and_witness;
     use crate::from_r1cs::r1cs_constraint_processor::generate_circuit;
     use ark_std::io::Cursor;
+    use ark_std::rand::SeedableRng;
 
     #[test]
     fn test_multiplier2() {
@@ -121,7 +122,10 @@ mod test {
             load_r1cs_and_witness(Cursor::new(r1cs), Cursor::new(witness)).unwrap();
 
         let circuit = generate_circuit(circom_circuit.clone(), Mode::PROVE).unwrap();
-        assert!(circuit.is_satisfied());
-        assert_eq!(circuit.num_gates, 12);
+        assert!(circuit.is_constraint_satisfied());
+        assert_eq!(circuit.num_rows, 11);
+
+        let mut prng = rand_chacha::ChaCha20Rng::seed_from_u64(0);
+        assert!(circuit.is_logup_satisfied(&mut prng, &circuit.input_maps));
     }
 }
