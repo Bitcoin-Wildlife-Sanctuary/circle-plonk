@@ -126,13 +126,18 @@ mod tests {
     use stwo_prover::core::fields::m31::BaseField;
     use stwo_prover::core::fields::IntoSlice;
     use stwo_prover::core::pcs::{CommitmentSchemeVerifier, TreeVec};
-    use stwo_prover::core::prover::verify;
+    use stwo_prover::core::prover::{verify, LOG_BLOWUP_FACTOR};
     use stwo_prover::core::vcs::bws_sha256_hash::BWSSha256Hasher;
     use stwo_prover::core::InteractionElements;
     use stwo_prover::examples::plonk::PlonkCircuitTrace;
 
     #[test]
     fn test_simd_plonk_prove() {
+        assert_ne!(
+            LOG_BLOWUP_FACTOR, 1,
+            "For some unknown reason, blowup factor 2^1 doesn't work"
+        );
+
         let mut prng = rand_chacha::ChaCha20Rng::seed_from_u64(0);
         let test_circuit = TestCircuit::rand(&mut prng);
         let mut circuit = generate_circuit(test_circuit.clone(), Mode::PROVE).unwrap();
