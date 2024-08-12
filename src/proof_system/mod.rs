@@ -17,6 +17,7 @@ use stwo_prover::core::InteractionElements;
 use stwo_prover::examples::plonk::{
     gen_interaction_trace, gen_trace, PlonkCircuitTrace, PlonkComponent,
 };
+use tracing::{span, Level};
 
 impl From<&Circuit> for PlonkCircuitTrace {
     fn from(circuit: &Circuit) -> Self {
@@ -53,33 +54,40 @@ pub fn prove_plonk(
     assert!(log_n_rows >= LOG_N_LANES);
 
     // Precompute twiddles.
+    let span = span!(Level::INFO, "Precompute twiddles").entered();
     let twiddles = SimdBackend::precompute_twiddles(
         CanonicCoset::new(log_n_rows + LOG_BLOWUP_FACTOR + 1)
             .circle_domain()
             .half_coset,
     );
+    span.exit();
 
     // Setup protocol.
     let channel = &mut BWSSha256Channel::new(BWSSha256Hasher::hash(BaseField::into_slice(&[])));
     let commitment_scheme = &mut CommitmentSchemeProver::new(LOG_BLOWUP_FACTOR, &twiddles);
 
     // Trace.
+    let span = span!(Level::INFO, "Trace").entered();
     let trace = gen_trace(log_n_rows, &circuit);
     let max_degree = log_n_rows + 1;
     let mut tree_builder = commitment_scheme.tree_builder();
     tree_builder.extend_evals(trace, max_degree);
     tree_builder.commit(channel);
+    span.exit();
 
     // Draw lookup element.
     let lookup_elements = LookupElements::draw(channel);
 
     // Interaction trace.
+    let span = span!(Level::INFO, "Interaction").entered();
     let (trace, claimed_sum) = gen_interaction_trace(log_n_rows, &circuit, &lookup_elements);
     let mut tree_builder = commitment_scheme.tree_builder();
     tree_builder.extend_evals(trace, max_degree);
     tree_builder.commit(channel);
+    span.exit();
 
     // Constant trace.
+    let span = span!(Level::INFO, "Constant").entered();
     let mut tree_builder = commitment_scheme.tree_builder();
     tree_builder.extend_evals(
         chain!([circuit.a_wire, circuit.b_wire, circuit.c_wire, circuit.op]
@@ -94,6 +102,7 @@ pub fn prove_plonk(
         max_degree,
     );
     tree_builder.commit(channel);
+    span.exit();
 
     // Prove constraints.
     let component = PlonkComponent {
@@ -131,7 +140,9 @@ mod tests {
     use stwo_prover::core::InteractionElements;
     use stwo_prover::examples::plonk::PlonkCircuitTrace;
 
-    #[test]
+    // test instruction:
+    // RUSTFLAGS="-C target-cpu=native" RUST_LOG_SPAN_EVENTS="enter,close" RUST_LOG="none,circle_plonk=info,stwo_prover=info" cargo test test_simd_plonk_prove --no-default-features --release -- --nocapture
+    #[test_log::test]
     fn test_simd_plonk_prove() {
         assert_ne!(
             LOG_BLOWUP_FACTOR, 1,

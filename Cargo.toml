@@ -14,13 +14,17 @@ ark-circom = { git = "https://github.com/Bitcoin-Wildlife-Sanctuary/circom-compa
 itertools = "0.12.0"
 ark-bn254 = "0.5.0-alpha.0"
 ark-r1cs-std = "0.5.0-alpha.0"
+tracing = "0.1.40"
 
 [dev-dependencies]
 ark-algebra-test-templates = "0.5.0-alpha.0"
 rand_chacha = "0.3.1"
 ark-serialize = "0.5.0-alpha.0"
 ark-std = "0.5.0-alpha.0"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+test-log = { version = "0.2.15", features = ["trace"] }
 
 [features]
 default = ["stwo-prover/tiny_blowup"]
+small_blowup = ["stwo-prover/small_blowup"]
 # tiny_blowup is used for integration test.
