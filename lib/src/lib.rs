@@ -6,4 +6,4 @@ pub mod circuit;
 
 pub mod from_r1cs;
 
-pub mod proof_system;
+pub mod stwo;

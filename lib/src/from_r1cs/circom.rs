@@ -46,7 +46,7 @@ pub fn witness_read<R: Read + Seek>(mut reader: R) -> IoResult<Vec<FM31>> {
     }
 
     let id_section1_length = reader.read_u64::<LittleEndian>()?;
-    if id_section1_length != 16 {
+    if id_section1_length != 12 {
         return Err(IoError(Error::new(
             ErrorKind::InvalidData,
             "Unexpected length of the first section",
@@ -54,11 +54,11 @@ pub fn witness_read<R: Read + Seek>(mut reader: R) -> IoResult<Vec<FM31>> {
     }
 
     let n8 = reader.read_u32::<LittleEndian>()?;
-    if n8 != 8 {
+    if n8 != 4 {
         return Err(IoError(Error::new(ErrorKind::InvalidData, "Unexpected n8")));
     }
 
-    let fr_q = reader.read_u64::<LittleEndian>()?;
+    let fr_q = reader.read_u32::<LittleEndian>()?;
     if fr_q != 2147483647 {
         return Err(IoError(Error::new(
             ErrorKind::InvalidData,
@@ -77,7 +77,7 @@ pub fn witness_read<R: Read + Seek>(mut reader: R) -> IoResult<Vec<FM31>> {
     }
 
     let id_section2_length = reader.read_u64::<LittleEndian>()?;
-    if id_section2_length != 8 * num_witnesses as u64 {
+    if id_section2_length != 4 * num_witnesses as u64 {
         return Err(IoError(Error::new(
             ErrorKind::InvalidData,
             "Unexpected length of the second section",
@@ -86,7 +86,7 @@ pub fn witness_read<R: Read + Seek>(mut reader: R) -> IoResult<Vec<FM31>> {
 
     let mut witnesses = vec![];
     for _ in 0..num_witnesses {
-        witnesses.push(FM31::from(reader.read_u64::<LittleEndian>()? as u32));
+        witnesses.push(FM31::from(reader.read_u32::<LittleEndian>()?));
     }
     Ok(witnesses)
 }
@@ -103,29 +103,4 @@ pub fn load_r1cs_and_witness(
         r1cs,
         witness: Some(witness),
     })
-}
-
-#[cfg(test)]
-mod test {
-    use crate::circuit::Mode;
-    use crate::from_r1cs::circom::load_r1cs_and_witness;
-    use crate::from_r1cs::r1cs_constraint_processor::generate_circuit;
-    use ark_std::io::Cursor;
-    use ark_std::rand::SeedableRng;
-
-    #[test]
-    fn test_multiplier2() {
-        let r1cs = include_bytes!("./multiplier2.r1cs");
-        let witness = include_bytes!("./output.wtns");
-
-        let circom_circuit =
-            load_r1cs_and_witness(Cursor::new(r1cs), Cursor::new(witness)).unwrap();
-
-        let circuit = generate_circuit(circom_circuit.clone(), Mode::PROVE).unwrap();
-        assert!(circuit.is_constraint_satisfied());
-        assert_eq!(circuit.num_rows, 11);
-
-        let mut prng = rand_chacha::ChaCha20Rng::seed_from_u64(0);
-        assert!(circuit.is_logup_satisfied(&mut prng, &circuit.input_maps));
-    }
 }

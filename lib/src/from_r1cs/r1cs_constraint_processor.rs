@@ -18,11 +18,13 @@
 */
 use crate::circuit::{Circuit, Mode};
 use crate::field::{to_m31, FM31};
-use ark_ff::{Field, One, Zero};
+use ark_ff::{AdditiveGroup, Field, One, Zero};
 use ark_relations::r1cs::{
     ConstraintSynthesizer, ConstraintSystem, OptimizationGoal, SynthesisMode,
 };
+use itertools::Itertools;
 use std::collections::HashMap;
+use std::ops::Neg;
 use stwo_prover::core::fields::m31::M31;
 
 pub struct OnDemandAllocator {
@@ -223,7 +225,75 @@ pub fn process_r1cs_addition_constraint(
     allocator: &mut OnDemandAllocator,
     c: &[(FM31, usize)],
 ) {
-    let c = reduce_coefs(circuit, allocator, c);
+    let mut c = c.to_vec();
+
+    let l = c.len();
+
+    let mut suitable = None;
+    for i in 0..l {
+        if c[i].0.neg().is_one() && !allocator.is_allocated(c[i].1) {
+            suitable = Some(c[i]);
+            c.remove(i);
+            break;
+        }
+    }
+
+    if let Some(suitable) = suitable {
+        let v = reduce_coefs(circuit, allocator, &c);
+        allocator.set_allocated(suitable.1, v);
+
+        return;
+    }
+
+    let cur_weight: u32 = c.iter().map(|&(w, _)| if w.is_one() { 0 } else { 1 }).sum();
+
+    let mut second_suitable = None;
+    for i in 0..l {
+        if c[i].0.is_one() && !allocator.is_allocated(c[i].1) {
+            second_suitable = Some(c[i]);
+            c.remove(i);
+            break;
+        }
+    }
+
+    if let Some(second_suitable) = second_suitable {
+        let new_weight: u32 = c
+            .iter()
+            .map(|&(w, _)| if w.neg().is_one() { 0 } else { 1 })
+            .sum();
+
+        if new_weight < cur_weight + 1 {
+            for item in c.iter_mut() {
+                item.0.neg_in_place();
+            }
+            let v = reduce_coefs(circuit, allocator, &c);
+            allocator.set_allocated(second_suitable.1, v);
+            return;
+        } else {
+            c.push(second_suitable);
+        }
+    }
+
+    let mut third_suitable = None;
+    for i in 0..l {
+        if !allocator.is_allocated(c[i].1) {
+            third_suitable = Some(c[i]);
+            c.remove(i);
+            break;
+        }
+    }
+
+    if let Some(third_suitable) = third_suitable {
+        let inv = third_suitable.0.inverse().unwrap();
+        for item in c.iter_mut() {
+            item.0 *= inv;
+        }
+        let v = reduce_coefs(circuit, allocator, &c);
+        allocator.set_allocated(third_suitable.1, v);
+        return;
+    }
+
+    let c = reduce_coefs(circuit, allocator, &c);
     circuit.zero_test(c);
 }
 
@@ -234,18 +304,46 @@ pub fn process_r1cs_multiplication_constraint(
     b: &[(FM31, usize)],
     c: &[(FM31, usize)],
 ) {
-    let a = reduce_coefs(circuit, allocator, a);
-    let b = reduce_coefs(circuit, allocator, b);
-
     if c.len() == 1 && !allocator.is_allocated(c[0].1) {
-        let mut v = circuit.mul(a, b);
-        if !c[0].0.is_one() {
+        if c[0].0.is_one() {
+            let a = reduce_coefs(circuit, allocator, a);
+            let b = reduce_coefs(circuit, allocator, b);
+            let v = circuit.mul(a, b);
+            allocator.set_allocated(c[0].1, v);
+        } else if c[0].0.neg().is_one() {
+            let a_weight: u32 = a
+                .iter()
+                .map(|&(w, _)| if w.neg().is_one() { 0 } else { 1 })
+                .sum();
+            let b_weight: u32 = b
+                .iter()
+                .map(|&(w, _)| if w.neg().is_one() { 0 } else { 1 })
+                .sum();
+            if a_weight > b_weight {
+                let a = reduce_coefs(circuit, allocator, a);
+                let b = b.iter().map(|&(w, i)| (w.neg(), i)).collect_vec();
+                let b = reduce_coefs(circuit, allocator, &b);
+                let v = circuit.mul(a, b);
+                allocator.set_allocated(c[0].1, v);
+            } else {
+                let b = reduce_coefs(circuit, allocator, b);
+                let a = a.iter().map(|&(w, i)| (w.neg(), i)).collect_vec();
+                let a = reduce_coefs(circuit, allocator, &a);
+                let v = circuit.mul(a, b);
+                allocator.set_allocated(c[0].1, v);
+            }
+        } else {
+            let a = reduce_coefs(circuit, allocator, a);
+            let b = reduce_coefs(circuit, allocator, b);
+            let mut v = circuit.mul(a, b);
             v = circuit.mul_by_constant(v, to_m31(&c[0].0.inverse().unwrap()));
+            allocator.set_allocated(c[0].1, v);
         }
-        allocator.set_allocated(c[0].1, v);
     } else {
         let c = reduce_coefs(circuit, allocator, c);
 
+        let a = reduce_coefs(circuit, allocator, a);
+        let b = reduce_coefs(circuit, allocator, b);
         let a_mul_b = circuit.mul(a, b);
         let c_neg = circuit.neg(c);
         let sum = circuit.add(a_mul_b, c_neg);

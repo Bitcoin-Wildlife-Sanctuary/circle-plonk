@@ -128,10 +128,10 @@ where
 mod tests {
     use super::prove_plonk;
     use crate::circuit::Mode;
+    use crate::from_r1cs::circom::load_r1cs_and_witness;
     use crate::from_r1cs::r1cs_constraint_processor::generate_circuit;
-    use crate::from_r1cs::TestCircuit;
     use ark_std::rand::SeedableRng;
-    use ark_std::UniformRand;
+    use std::io::Cursor;
     use stwo_prover::constraint_framework::logup::LookupElements;
     use stwo_prover::core::channel::Sha256Channel;
     use stwo_prover::core::fri::FriConfig;
@@ -145,6 +145,21 @@ mod tests {
     // RUSTFLAGS="-C target-cpu=native" RUST_LOG_SPAN_EVENTS="enter,close" RUST_LOG="none,circle_plonk=info,stwo_prover=info" cargo test test_simd_plonk_prove --no-default-features --release -- --nocapture
     #[test_log::test]
     fn test_simd_plonk_prove() {
+        let r1cs = include_bytes!("test.r1cs");
+        let witness = include_bytes!("output.wtns");
+
+        let circom_circuit =
+            load_r1cs_and_witness(Cursor::new(r1cs), Cursor::new(witness)).unwrap();
+
+        let mut circuit = generate_circuit(circom_circuit.clone(), Mode::PROVE).unwrap();
+        assert!(circuit.is_constraint_satisfied());
+        assert_eq!(circuit.num_rows, 6332);
+
+        let mut prng = rand_chacha::ChaCha20Rng::seed_from_u64(0);
+        assert!(circuit.is_logup_satisfied(&mut prng, &circuit.input_maps));
+
+        circuit.pad_to_next_power_of_2();
+
         assert_ne!(
             LOG_BLOWUP_FACTOR, 1,
             "For some unknown reason, blowup factor 2^1 doesn't work"
@@ -153,11 +168,6 @@ mod tests {
             pow_bits: 10,
             fri_config: FriConfig::new(0, 4, 64),
         };
-
-        let mut prng = rand_chacha::ChaCha20Rng::seed_from_u64(0);
-        let test_circuit = TestCircuit::rand(&mut prng);
-        let mut circuit = generate_circuit(test_circuit.clone(), Mode::PROVE).unwrap();
-        circuit.pad_to_next_power_of_2();
 
         let trace: PlonkCircuitTrace = PlonkCircuitTrace::from(&circuit);
 
