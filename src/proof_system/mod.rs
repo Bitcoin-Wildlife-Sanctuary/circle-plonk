@@ -4,15 +4,13 @@ use stwo_prover::constraint_framework::logup::LookupElements;
 use stwo_prover::core::backend::simd::column::BaseColumn;
 use stwo_prover::core::backend::simd::m31::LOG_N_LANES;
 use stwo_prover::core::backend::simd::SimdBackend;
-use stwo_prover::core::channel::{BWSSha256Channel, Channel};
-use stwo_prover::core::fields::m31::{BaseField, M31};
-use stwo_prover::core::fields::IntoSlice;
-use stwo_prover::core::pcs::CommitmentSchemeProver;
+use stwo_prover::core::backend::BackendForChannel;
+use stwo_prover::core::channel::MerkleChannel;
+use stwo_prover::core::fields::m31::M31;
+use stwo_prover::core::pcs::{CommitmentSchemeProver, PcsConfig};
 use stwo_prover::core::poly::circle::{CanonicCoset, CircleEvaluation, PolyOps};
 use stwo_prover::core::poly::BitReversedOrder;
 use stwo_prover::core::prover::{prove, StarkProof, LOG_BLOWUP_FACTOR};
-use stwo_prover::core::vcs::bws_sha256_hash::BWSSha256Hasher;
-use stwo_prover::core::vcs::bws_sha256_merkle::BWSSha256MerkleHasher;
 use stwo_prover::core::InteractionElements;
 use stwo_prover::examples::plonk::{
     gen_interaction_trace, gen_trace, PlonkCircuitTrace, PlonkComponent,
@@ -46,9 +44,13 @@ impl From<&Circuit> for PlonkCircuitTrace {
     }
 }
 
-pub fn prove_plonk(
+pub fn prove_plonk<MC: MerkleChannel>(
+    config: PcsConfig,
     circuit: PlonkCircuitTrace,
-) -> (PlonkComponent, StarkProof<BWSSha256MerkleHasher>) {
+) -> (PlonkComponent, StarkProof<MC::H>)
+where
+    SimdBackend: BackendForChannel<MC>,
+{
     assert!(circuit.a_wire.length.is_power_of_two());
     let log_n_rows = circuit.a_wire.length.ilog2();
     assert!(log_n_rows >= LOG_N_LANES);
@@ -63,8 +65,8 @@ pub fn prove_plonk(
     span.exit();
 
     // Setup protocol.
-    let channel = &mut BWSSha256Channel::new(BWSSha256Hasher::hash(BaseField::into_slice(&[])));
-    let commitment_scheme = &mut CommitmentSchemeProver::new(LOG_BLOWUP_FACTOR, &twiddles);
+    let channel = &mut MC::C::default();
+    let commitment_scheme = &mut CommitmentSchemeProver::new(config, &twiddles);
 
     // Trace.
     let span = span!(Level::INFO, "Trace").entered();
@@ -93,7 +95,7 @@ pub fn prove_plonk(
         chain!([circuit.a_wire, circuit.b_wire, circuit.c_wire, circuit.op]
             .into_iter()
             .map(|col| {
-                CircleEvaluation::<SimdBackend, _, BitReversedOrder>::new(
+                CircleEvaluation::<SimdBackend, M31, BitReversedOrder>::new(
                     CanonicCoset::new(log_n_rows).circle_domain(),
                     col,
                 )
@@ -111,7 +113,7 @@ pub fn prove_plonk(
         claimed_sum,
     };
 
-    let proof = prove::<SimdBackend, _, _>(
+    let proof = prove::<SimdBackend, MC>(
         &[&component],
         channel,
         &InteractionElements::default(),
@@ -131,12 +133,11 @@ mod tests {
     use ark_std::rand::SeedableRng;
     use ark_std::UniformRand;
     use stwo_prover::constraint_framework::logup::LookupElements;
-    use stwo_prover::core::channel::{BWSSha256Channel, Channel};
-    use stwo_prover::core::fields::m31::BaseField;
-    use stwo_prover::core::fields::IntoSlice;
-    use stwo_prover::core::pcs::{CommitmentSchemeVerifier, TreeVec};
+    use stwo_prover::core::channel::Sha256Channel;
+    use stwo_prover::core::fri::FriConfig;
+    use stwo_prover::core::pcs::{CommitmentSchemeVerifier, PcsConfig, TreeVec};
     use stwo_prover::core::prover::{verify, LOG_BLOWUP_FACTOR};
-    use stwo_prover::core::vcs::bws_sha256_hash::BWSSha256Hasher;
+    use stwo_prover::core::vcs::sha256_merkle::Sha256MerkleChannel;
     use stwo_prover::core::InteractionElements;
     use stwo_prover::examples::plonk::PlonkCircuitTrace;
 
@@ -148,6 +149,10 @@ mod tests {
             LOG_BLOWUP_FACTOR, 1,
             "For some unknown reason, blowup factor 2^1 doesn't work"
         );
+        let config = PcsConfig {
+            pow_bits: 10,
+            fri_config: FriConfig::new(0, 4, 64),
+        };
 
         let mut prng = rand_chacha::ChaCha20Rng::seed_from_u64(0);
         let test_circuit = TestCircuit::rand(&mut prng);
@@ -160,12 +165,12 @@ mod tests {
         let log_n_instances = trace.a_wire.length.ilog2();
 
         // Prove.
-        let (component, proof) = prove_plonk(trace);
+        let (component, proof) = prove_plonk::<Sha256MerkleChannel>(config, trace);
 
         // Verify.
         // TODO: Create Air instance independently.
-        let channel = &mut BWSSha256Channel::new(BWSSha256Hasher::hash(BaseField::into_slice(&[])));
-        let commitment_scheme = &mut CommitmentSchemeVerifier::new();
+        let channel = &mut Sha256Channel::default();
+        let commitment_scheme = &mut CommitmentSchemeVerifier::<Sha256MerkleChannel>::new(config);
 
         // Decommit.
         // Retrieve the expected column sizes in each commitment interaction, from the AIR.
