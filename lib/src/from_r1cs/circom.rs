@@ -95,12 +95,19 @@ pub fn load_r1cs_and_witness(
     r1cs_data: impl Read + Seek,
     witness_data: impl Read + Seek,
 ) -> IoResult<CircomCircuit<FM31>> {
+    let mut circuit = load_r1cs_only(r1cs_data)?;
+    circuit.witness = Some(witness_read(witness_data)?);
+    Ok(circuit)
+}
+
+pub fn load_r1cs_only(
+    r1cs_data: impl Read + Seek,
+) -> IoResult<CircomCircuit<FM31>> {
     let r1cs_file = R1CSFile::<FM31>::new(r1cs_data)?;
     let r1cs: R1CS<FM31> = r1cs_file.into();
 
-    let witness = witness_read(witness_data)?;
     Ok(CircomCircuit::<FM31> {
         r1cs,
-        witness: Some(witness),
+        witness: None,
     })
 }

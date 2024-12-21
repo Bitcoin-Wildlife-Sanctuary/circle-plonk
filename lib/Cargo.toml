@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 ark-ff = "0.5.0"
 ark-relations = "0.5.1"
-stwo-prover = { git = "https://github.com/Bitcoin-Wildlife-Sanctuary/stwo", branch = "dev" }
+stwo-prover = { git = "https://github.com/Bitcoin-Wildlife-Sanctuary/stwo", branch = "move-mult-in-plonk" }
 byteorder = "^1.5.0"
 ark-serialize = "0.5.0"
 ark-std = "0.5.0"
@@ -15,6 +15,7 @@ itertools = "0.13.0"
 ark-bn254 = "0.5.0"
 ark-r1cs-std = "0.5.0"
 tracing = "0.1.41"
+serde = { version = "1.0.216", features = ["derive"] }
 
 [dev-dependencies]
 ark-algebra-test-templates = "0.5.0"
@@ -22,28 +23,3 @@ rand_chacha = "0.3.1"
 ark-serialize = "0.5.0"
 ark-std = "0.5.0"
 test-log = { version = "0.2.16", features = ["trace"] }
-
-[profile.release]
-opt-level = 3
-lto = "thin"
-incremental = true
-panic = 'abort'
-
-[profile.bench]
-opt-level = 3
-debug = false
-rpath = false
-lto = "thin"
-incremental = true
-debug-assertions = false
-
-[profile.dev]
-opt-level = 0
-panic = 'abort'
-
-[profile.test]
-opt-level = 3
-lto = "thin"
-incremental = true
-debug-assertions = true
-debug = true

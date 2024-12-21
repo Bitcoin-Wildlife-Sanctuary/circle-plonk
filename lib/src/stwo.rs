@@ -12,10 +12,12 @@ use stwo_prover::core::poly::circle::{CanonicCoset, CircleEvaluation, PolyOps};
 use stwo_prover::core::poly::BitReversedOrder;
 use stwo_prover::core::prover::{prove, StarkProof, LOG_BLOWUP_FACTOR};
 use stwo_prover::core::InteractionElements;
+use stwo_prover::core::vcs::ops::MerkleHasher;
 use stwo_prover::examples::plonk::{
     gen_interaction_trace, gen_trace, PlonkCircuitTrace, PlonkComponent,
 };
 use tracing::{span, Level};
+use serde::{Deserialize, Serialize};
 
 impl From<&Circuit> for PlonkCircuitTrace {
     fn from(circuit: &Circuit) -> Self {
@@ -40,6 +42,62 @@ impl From<&Circuit> for PlonkCircuitTrace {
             a_val,
             b_val,
             c_val,
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct PlonkVerifierParams<MC: MerkleChannel> {
+    pub log_n_rows: u32,
+    pub constant_tree_hash: <MC::H as MerkleHasher>::Hash
+}
+
+impl<MC: MerkleChannel> PlonkVerifierParams<MC> {
+    pub fn preprocess(
+        config: PcsConfig,
+        circuit: &Circuit
+    ) -> Self
+    where
+        SimdBackend: BackendForChannel<MC>,
+    {
+        assert!(circuit.num_rows.is_power_of_two());
+        let log_n_rows = circuit.num_rows.ilog2();
+        assert!(log_n_rows >= LOG_N_LANES);
+
+        let twiddles = SimdBackend::precompute_twiddles(
+            CanonicCoset::new(log_n_rows + LOG_BLOWUP_FACTOR + 1)
+                .circle_domain()
+                .half_coset,
+        );
+
+        let mult = BaseColumn::from_iter(circuit.mult.iter().map(|&x| M31::from(x)));
+        let a_wire = BaseColumn::from_iter(circuit.idx_a.iter().map(|&x| M31::from(x)));
+        let b_wire = BaseColumn::from_iter(circuit.idx_b.iter().map(|&x| M31::from(x)));
+        let c_wire = (0..(1 << log_n_rows)).clone().map(|i| i.into()).collect();
+        let op = BaseColumn::from_iter(circuit.op.iter().copied());
+
+        let dummy_channel = &mut MC::C::default();
+        let max_degree = log_n_rows + 1;
+
+        let commitment_scheme = &mut CommitmentSchemeProver::<SimdBackend, MC>::new(config, &twiddles);
+        let mut tree_builder = commitment_scheme.tree_builder();
+        tree_builder.extend_evals(
+            chain!([mult, a_wire, b_wire, c_wire, op]
+            .into_iter()
+            .map(|col| {
+                CircleEvaluation::<SimdBackend, M31, BitReversedOrder>::new(
+                    CanonicCoset::new(log_n_rows).circle_domain(),
+                    col,
+                )
+            }))
+                .collect_vec(),
+            max_degree,
+        );
+        tree_builder.commit(dummy_channel);
+
+        Self {
+            log_n_rows,
+            constant_tree_hash: commitment_scheme.trees.first().unwrap().commitment.root(),
         }
     }
 }
@@ -92,7 +150,7 @@ where
     let span = span!(Level::INFO, "Constant").entered();
     let mut tree_builder = commitment_scheme.tree_builder();
     tree_builder.extend_evals(
-        chain!([circuit.a_wire, circuit.b_wire, circuit.c_wire, circuit.op]
+        chain!([circuit.mult, circuit.a_wire, circuit.b_wire, circuit.c_wire, circuit.op]
             .into_iter()
             .map(|col| {
                 CircleEvaluation::<SimdBackend, M31, BitReversedOrder>::new(
@@ -126,7 +184,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::prove_plonk;
+    use super::{prove_plonk, PlonkVerifierParams};
     use crate::circuit::Mode;
     use crate::from_r1cs::circom::load_r1cs_and_witness;
     use crate::from_r1cs::r1cs_constraint_processor::generate_circuit;
@@ -187,9 +245,9 @@ mod tests {
         let max_degree = log_n_instances + 1;
 
         let sizes = TreeVec::new(vec![
-            vec![max_degree; 4],
+            vec![max_degree; 3],
             vec![max_degree; 8],
-            vec![max_degree; 4],
+            vec![max_degree; 5],
         ]);
 
         // Trace columns.
@@ -202,6 +260,16 @@ mod tests {
         commitment_scheme.commit(proof.commitments[1], &sizes[1], channel);
         // Constant columns.
         commitment_scheme.commit(proof.commitments[2], &sizes[2], channel);
+
+        // Test computation of the constant commitment
+        let expected_constant_commitment = {
+            let vk = PlonkVerifierParams::<Sha256MerkleChannel>::preprocess(
+                config,
+                &circuit
+            );
+            vk.constant_tree_hash
+        };
+        assert_eq!(expected_constant_commitment, proof.commitments[2]);
 
         verify(
             &[&component],
