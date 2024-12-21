@@ -1,5 +1,6 @@
 use crate::circuit::Circuit;
 use itertools::{chain, Itertools};
+use serde::{Deserialize, Serialize};
 use stwo_prover::constraint_framework::logup::LookupElements;
 use stwo_prover::core::backend::simd::column::BaseColumn;
 use stwo_prover::core::backend::simd::m31::LOG_N_LANES;
@@ -11,13 +12,12 @@ use stwo_prover::core::pcs::{CommitmentSchemeProver, PcsConfig};
 use stwo_prover::core::poly::circle::{CanonicCoset, CircleEvaluation, PolyOps};
 use stwo_prover::core::poly::BitReversedOrder;
 use stwo_prover::core::prover::{prove, StarkProof, LOG_BLOWUP_FACTOR};
-use stwo_prover::core::InteractionElements;
 use stwo_prover::core::vcs::ops::MerkleHasher;
+use stwo_prover::core::InteractionElements;
 use stwo_prover::examples::plonk::{
     gen_interaction_trace, gen_trace, PlonkCircuitTrace, PlonkComponent,
 };
 use tracing::{span, Level};
-use serde::{Deserialize, Serialize};
 
 impl From<&Circuit> for PlonkCircuitTrace {
     fn from(circuit: &Circuit) -> Self {
@@ -49,14 +49,11 @@ impl From<&Circuit> for PlonkCircuitTrace {
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct PlonkVerifierParams<MC: MerkleChannel> {
     pub log_n_rows: u32,
-    pub constant_tree_hash: <MC::H as MerkleHasher>::Hash
+    pub constant_tree_hash: <MC::H as MerkleHasher>::Hash,
 }
 
 impl<MC: MerkleChannel> PlonkVerifierParams<MC> {
-    pub fn preprocess(
-        config: PcsConfig,
-        circuit: &Circuit
-    ) -> Self
+    pub fn preprocess(config: PcsConfig, circuit: &Circuit) -> Self
     where
         SimdBackend: BackendForChannel<MC>,
     {
@@ -79,18 +76,17 @@ impl<MC: MerkleChannel> PlonkVerifierParams<MC> {
         let dummy_channel = &mut MC::C::default();
         let max_degree = log_n_rows + 1;
 
-        let commitment_scheme = &mut CommitmentSchemeProver::<SimdBackend, MC>::new(config, &twiddles);
+        let commitment_scheme =
+            &mut CommitmentSchemeProver::<SimdBackend, MC>::new(config, &twiddles);
         let mut tree_builder = commitment_scheme.tree_builder();
         tree_builder.extend_evals(
-            chain!([mult, a_wire, b_wire, c_wire, op]
-            .into_iter()
-            .map(|col| {
+            chain!([mult, a_wire, b_wire, c_wire, op].into_iter().map(|col| {
                 CircleEvaluation::<SimdBackend, M31, BitReversedOrder>::new(
                     CanonicCoset::new(log_n_rows).circle_domain(),
                     col,
                 )
             }))
-                .collect_vec(),
+            .collect_vec(),
             max_degree,
         );
         tree_builder.commit(dummy_channel);
@@ -150,14 +146,20 @@ where
     let span = span!(Level::INFO, "Constant").entered();
     let mut tree_builder = commitment_scheme.tree_builder();
     tree_builder.extend_evals(
-        chain!([circuit.mult, circuit.a_wire, circuit.b_wire, circuit.c_wire, circuit.op]
-            .into_iter()
-            .map(|col| {
-                CircleEvaluation::<SimdBackend, M31, BitReversedOrder>::new(
-                    CanonicCoset::new(log_n_rows).circle_domain(),
-                    col,
-                )
-            }))
+        chain!([
+            circuit.mult,
+            circuit.a_wire,
+            circuit.b_wire,
+            circuit.c_wire,
+            circuit.op
+        ]
+        .into_iter()
+        .map(|col| {
+            CircleEvaluation::<SimdBackend, M31, BitReversedOrder>::new(
+                CanonicCoset::new(log_n_rows).circle_domain(),
+                col,
+            )
+        }))
         .collect_vec(),
         max_degree,
     );
@@ -263,10 +265,7 @@ mod tests {
 
         // Test computation of the constant commitment
         let expected_constant_commitment = {
-            let vk = PlonkVerifierParams::<Sha256MerkleChannel>::preprocess(
-                config,
-                &circuit
-            );
+            let vk = PlonkVerifierParams::<Sha256MerkleChannel>::preprocess(config, &circuit);
             vk.constant_tree_hash
         };
         assert_eq!(expected_constant_commitment, proof.commitments[2]);

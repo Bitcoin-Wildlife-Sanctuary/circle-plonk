@@ -100,9 +100,7 @@ pub fn load_r1cs_and_witness(
     Ok(circuit)
 }
 
-pub fn load_r1cs_only(
-    r1cs_data: impl Read + Seek,
-) -> IoResult<CircomCircuit<FM31>> {
+pub fn load_r1cs_only(r1cs_data: impl Read + Seek) -> IoResult<CircomCircuit<FM31>> {
     let r1cs_file = R1CSFile::<FM31>::new(r1cs_data)?;
     let r1cs: R1CS<FM31> = r1cs_file.into();
 

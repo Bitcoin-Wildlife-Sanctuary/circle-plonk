@@ -196,7 +196,11 @@ pub fn reduce_coefs(
     }
 
     if cs.len() == 0 {
-        return 0;
+        if k.is_zero() {
+            return 0;
+        } else {
+            return circuit.new_constant(to_m31(&k));
+        }
     }
 
     let mut sum = allocator.get(circuit, cs[0].0);
@@ -341,7 +345,6 @@ pub fn process_r1cs_multiplication_constraint(
         }
     } else {
         let c = reduce_coefs(circuit, allocator, c);
-
         let a = reduce_coefs(circuit, allocator, a);
         let b = reduce_coefs(circuit, allocator, b);
         let a_mul_b = circuit.mul(a, b);

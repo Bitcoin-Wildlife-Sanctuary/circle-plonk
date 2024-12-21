@@ -45,6 +45,8 @@ impl Circuit {
         circuit.idx_b.push(0);
         circuit.mult.push(2);
 
+        circuit.constant_maps.insert(M31::one(), 1);
+
         circuit
     }
 
