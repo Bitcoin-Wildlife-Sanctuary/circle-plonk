@@ -2,20 +2,23 @@ use circle_plonk_lib::circuit::Mode;
 use circle_plonk_lib::from_r1cs::circom::{load_r1cs_and_witness, load_r1cs_only};
 use circle_plonk_lib::from_r1cs::r1cs_constraint_processor::generate_circuit;
 use circle_plonk_lib::stwo::{prove_plonk, PlonkVerifierParams};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use num_traits::Zero;
 use serde::Deserialize;
 use serde_json::Value;
 use std::fs::File;
 use std::io::Write;
 use stwo_prover::constraint_framework::logup::LookupElements;
-use stwo_prover::core::channel::Sha256Channel;
+use stwo_prover::core::channel::poseidon31::Poseidon31Channel;
+use stwo_prover::core::channel::{Blake3Channel, Sha256Channel};
 use stwo_prover::core::fields::m31::M31;
 use stwo_prover::core::fields::qm31::QM31;
 use stwo_prover::core::fields::FieldExpOps;
 use stwo_prover::core::fri::FriConfig;
 use stwo_prover::core::pcs::{CommitmentSchemeVerifier, PcsConfig, TreeVec};
 use stwo_prover::core::prover::{verify, StarkProof};
+use stwo_prover::core::vcs::blake3_merkle::{Blake3MerkleChannel, Blake3MerkleHasher};
+use stwo_prover::core::vcs::poseidon31_merkle::{Poseidon31MerkleChannel, Poseidon31MerkleHasher};
 use stwo_prover::core::vcs::sha256_merkle::{Sha256MerkleChannel, Sha256MerkleHasher};
 use stwo_prover::core::InteractionElements;
 use stwo_prover::examples::plonk::{PlonkCircuitTrace, PlonkComponent};
@@ -24,6 +27,9 @@ use stwo_prover::examples::plonk::{PlonkCircuitTrace, PlonkComponent};
 struct Cli {
     #[command(subcommand)]
     command: Commands,
+
+    #[clap(value_enum, default_value = "poseidon31")]
+    hash: Hash,
 }
 
 #[derive(Subcommand)]
@@ -74,6 +80,16 @@ enum Commands {
     },
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+enum Hash {
+    /// Blake3
+    BLAKE3,
+    /// SHA256
+    SHA256,
+    /// Poseidon31
+    POSEIDON31,
+}
+
 fn main() {
     let cli = Cli::parse();
 
@@ -88,10 +104,27 @@ fn main() {
             let circom_circuit = load_r1cs_only(r1cs_data).unwrap();
             let mut circuit = generate_circuit(circom_circuit.clone(), Mode::INDEX).unwrap();
             circuit.pad_to_next_power_of_2();
-            let vk = PlonkVerifierParams::<Sha256MerkleChannel>::preprocess(config, &circuit);
 
             let mut out_vk = File::create(out_vk).unwrap();
-            out_vk.write(&bincode::serialize(&vk).unwrap()).unwrap();
+
+            match cli.hash {
+                Hash::BLAKE3 => {
+                    let vk =
+                        PlonkVerifierParams::<Blake3MerkleChannel>::preprocess(config, &circuit);
+                    out_vk.write(&bincode::serialize(&vk).unwrap()).unwrap();
+                }
+                Hash::SHA256 => {
+                    let vk =
+                        PlonkVerifierParams::<Sha256MerkleChannel>::preprocess(config, &circuit);
+                    out_vk.write(&bincode::serialize(&vk).unwrap()).unwrap();
+                }
+                Hash::POSEIDON31 => {
+                    let vk = PlonkVerifierParams::<Poseidon31MerkleChannel>::preprocess(
+                        config, &circuit,
+                    );
+                    out_vk.write(&bincode::serialize(&vk).unwrap()).unwrap();
+                }
+            }
         }
         Commands::Prove {
             r1cs,
@@ -108,12 +141,28 @@ fn main() {
             assert!(circuit.is_constraint_satisfied());
 
             let trace: PlonkCircuitTrace = PlonkCircuitTrace::from(&circuit);
-            let (_, proof) = prove_plonk::<Sha256MerkleChannel>(config, trace);
-
             let mut out_proof = File::create(out_proof).unwrap();
-            out_proof
-                .write(&bincode::serialize(&proof).unwrap())
-                .unwrap();
+
+            match cli.hash {
+                Hash::BLAKE3 => {
+                    let (_, proof) = prove_plonk::<Blake3MerkleChannel>(config, trace);
+                    out_proof
+                        .write(&bincode::serialize(&proof).unwrap())
+                        .unwrap();
+                }
+                Hash::SHA256 => {
+                    let (_, proof) = prove_plonk::<Sha256MerkleChannel>(config, trace);
+                    out_proof
+                        .write(&bincode::serialize(&proof).unwrap())
+                        .unwrap();
+                }
+                Hash::POSEIDON31 => {
+                    let (_, proof) = prove_plonk::<Poseidon31MerkleChannel>(config, trace);
+                    out_proof
+                        .write(&bincode::serialize(&proof).unwrap())
+                        .unwrap();
+                }
+            }
         }
         Commands::Verify {
             vk,
@@ -122,29 +171,8 @@ fn main() {
             input,
         } => {
             let vk_data = File::open(vk).unwrap();
-            let vk: PlonkVerifierParams<Sha256MerkleChannel> =
-                bincode::deserialize_from(vk_data).unwrap();
 
             let proof_data = File::open(proof).unwrap();
-            let proof: StarkProof<Sha256MerkleHasher> =
-                bincode::deserialize_from(proof_data).unwrap();
-
-            let channel = &mut Sha256Channel::default();
-            let commitment_scheme =
-                &mut CommitmentSchemeVerifier::<Sha256MerkleChannel>::new(config);
-
-            let max_degree = vk.log_n_rows + 1;
-            let sizes = TreeVec::new(vec![
-                vec![max_degree; 3],
-                vec![max_degree; 8],
-                vec![max_degree; 5],
-            ]);
-
-            commitment_scheme.commit(proof.commitments[0], &sizes[0], channel);
-            let lookup_elements = LookupElements::<2>::draw(channel);
-            commitment_scheme.commit(proof.commitments[1], &sizes[1], channel);
-            commitment_scheme.commit(proof.commitments[2], &sizes[2], channel);
-            assert_eq!(vk.constant_tree_hash, proof.commitments[2]);
 
             let map_data = File::open(map).unwrap();
 
@@ -183,35 +211,158 @@ fn main() {
                 }
             }
 
-            let claimed_sum = {
-                let mut denominators =
-                    vec![M31::from(1) + lookup_elements.alpha - lookup_elements.z];
-                for (i, v) in input_vec.iter().enumerate() {
-                    denominators.push(
-                        M31::from(i + 2) + lookup_elements.alpha * M31::from(*v)
-                            - lookup_elements.z,
-                    );
+            match cli.hash {
+                Hash::BLAKE3 => {
+                    let vk: PlonkVerifierParams<Blake3MerkleChannel> =
+                        bincode::deserialize_from(vk_data).unwrap();
+                    let max_degree = vk.log_n_rows + 1;
+                    let sizes = TreeVec::new(vec![
+                        vec![max_degree; 3],
+                        vec![max_degree; 8],
+                        vec![max_degree; 5],
+                    ]);
+                    let channel = &mut Blake3Channel::default();
+                    let commitment_scheme =
+                        &mut CommitmentSchemeVerifier::<Blake3MerkleChannel>::new(config);
+                    let proof: StarkProof<Blake3MerkleHasher> =
+                        bincode::deserialize_from(proof_data).unwrap();
+                    commitment_scheme.commit(proof.commitments[0], &sizes[0], channel);
+                    let lookup_elements = LookupElements::<2>::draw(channel);
+                    commitment_scheme.commit(proof.commitments[1], &sizes[1], channel);
+                    commitment_scheme.commit(proof.commitments[2], &sizes[2], channel);
+                    assert_eq!(vk.constant_tree_hash, proof.commitments[2]);
+
+                    let claimed_sum = {
+                        let mut denominators =
+                            vec![M31::from(1) + lookup_elements.alpha - lookup_elements.z];
+                        for (i, v) in input_vec.iter().enumerate() {
+                            denominators.push(
+                                M31::from(i + 2) + lookup_elements.alpha * M31::from(*v)
+                                    - lookup_elements.z,
+                            );
+                        }
+
+                        let mut denominator_inverses = vec![QM31::zero(); denominators.len()];
+                        QM31::batch_inverse(&denominators, &mut denominator_inverses);
+                        denominator_inverses.iter().sum::<QM31>()
+                    };
+
+                    let component = PlonkComponent {
+                        log_n_rows: vk.log_n_rows,
+                        lookup_elements,
+                        claimed_sum,
+                    };
+
+                    verify(
+                        &[&component],
+                        channel,
+                        &InteractionElements::default(),
+                        commitment_scheme,
+                        proof,
+                    )
+                    .unwrap();
                 }
+                Hash::SHA256 => {
+                    let vk: PlonkVerifierParams<Sha256MerkleChannel> =
+                        bincode::deserialize_from(vk_data).unwrap();
+                    let max_degree = vk.log_n_rows + 1;
+                    let sizes = TreeVec::new(vec![
+                        vec![max_degree; 3],
+                        vec![max_degree; 8],
+                        vec![max_degree; 5],
+                    ]);
+                    let channel = &mut Sha256Channel::default();
+                    let commitment_scheme =
+                        &mut CommitmentSchemeVerifier::<Sha256MerkleChannel>::new(config);
+                    let proof: StarkProof<Sha256MerkleHasher> =
+                        bincode::deserialize_from(proof_data).unwrap();
+                    commitment_scheme.commit(proof.commitments[0], &sizes[0], channel);
+                    let lookup_elements = LookupElements::<2>::draw(channel);
+                    commitment_scheme.commit(proof.commitments[1], &sizes[1], channel);
+                    commitment_scheme.commit(proof.commitments[2], &sizes[2], channel);
+                    assert_eq!(vk.constant_tree_hash, proof.commitments[2]);
 
-                let mut denominator_inverses = vec![QM31::zero(); denominators.len()];
-                QM31::batch_inverse(&denominators, &mut denominator_inverses);
-                denominator_inverses.iter().sum::<QM31>()
-            };
+                    let claimed_sum = {
+                        let mut denominators =
+                            vec![M31::from(1) + lookup_elements.alpha - lookup_elements.z];
+                        for (i, v) in input_vec.iter().enumerate() {
+                            denominators.push(
+                                M31::from(i + 2) + lookup_elements.alpha * M31::from(*v)
+                                    - lookup_elements.z,
+                            );
+                        }
 
-            let component = PlonkComponent {
-                log_n_rows: vk.log_n_rows,
-                lookup_elements,
-                claimed_sum,
-            };
+                        let mut denominator_inverses = vec![QM31::zero(); denominators.len()];
+                        QM31::batch_inverse(&denominators, &mut denominator_inverses);
+                        denominator_inverses.iter().sum::<QM31>()
+                    };
 
-            verify(
-                &[&component],
-                channel,
-                &InteractionElements::default(),
-                commitment_scheme,
-                proof,
-            )
-            .unwrap();
+                    let component = PlonkComponent {
+                        log_n_rows: vk.log_n_rows,
+                        lookup_elements,
+                        claimed_sum,
+                    };
+
+                    verify(
+                        &[&component],
+                        channel,
+                        &InteractionElements::default(),
+                        commitment_scheme,
+                        proof,
+                    )
+                    .unwrap();
+                }
+                Hash::POSEIDON31 => {
+                    let vk: PlonkVerifierParams<Poseidon31MerkleChannel> =
+                        bincode::deserialize_from(vk_data).unwrap();
+                    let max_degree = vk.log_n_rows + 1;
+                    let sizes = TreeVec::new(vec![
+                        vec![max_degree; 3],
+                        vec![max_degree; 8],
+                        vec![max_degree; 5],
+                    ]);
+                    let channel = &mut Poseidon31Channel::default();
+                    let commitment_scheme =
+                        &mut CommitmentSchemeVerifier::<Poseidon31MerkleChannel>::new(config);
+                    let proof: StarkProof<Poseidon31MerkleHasher> =
+                        bincode::deserialize_from(proof_data).unwrap();
+                    commitment_scheme.commit(proof.commitments[0], &sizes[0], channel);
+                    let lookup_elements = LookupElements::<2>::draw(channel);
+                    commitment_scheme.commit(proof.commitments[1], &sizes[1], channel);
+                    commitment_scheme.commit(proof.commitments[2], &sizes[2], channel);
+                    assert_eq!(vk.constant_tree_hash, proof.commitments[2]);
+
+                    let claimed_sum = {
+                        let mut denominators =
+                            vec![M31::from(1) + lookup_elements.alpha - lookup_elements.z];
+                        for (i, v) in input_vec.iter().enumerate() {
+                            denominators.push(
+                                M31::from(i + 2) + lookup_elements.alpha * M31::from(*v)
+                                    - lookup_elements.z,
+                            );
+                        }
+
+                        let mut denominator_inverses = vec![QM31::zero(); denominators.len()];
+                        QM31::batch_inverse(&denominators, &mut denominator_inverses);
+                        denominator_inverses.iter().sum::<QM31>()
+                    };
+
+                    let component = PlonkComponent {
+                        log_n_rows: vk.log_n_rows,
+                        lookup_elements,
+                        claimed_sum,
+                    };
+
+                    verify(
+                        &[&component],
+                        channel,
+                        &InteractionElements::default(),
+                        commitment_scheme,
+                        proof,
+                    )
+                    .unwrap();
+                }
+            }
         }
     }
 }
