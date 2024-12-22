@@ -27,9 +27,6 @@ use stwo_prover::examples::plonk::{PlonkCircuitTrace, PlonkComponent};
 struct Cli {
     #[command(subcommand)]
     command: Commands,
-
-    #[clap(value_enum, default_value = "poseidon31")]
-    hash: Hash,
 }
 
 #[derive(Subcommand)]
@@ -43,6 +40,10 @@ enum Commands {
         /// Path to the preprocessed parameters file
         #[arg(short, long)]
         out_vk: String,
+
+        #[arg(long)]
+        #[clap(value_enum, default_value = "sha256")]
+        hash: Hash,
     },
 
     /// Generate a proof
@@ -58,6 +59,10 @@ enum Commands {
         /// Path to the output proof file
         #[arg(short, long)]
         out_proof: String,
+
+        #[arg(long)]
+        #[clap(value_enum, default_value = "sha256")]
+        hash: Hash,
     },
 
     /// Verify a proof
@@ -77,6 +82,10 @@ enum Commands {
         /// Path to the public input
         #[arg(short, long)]
         input: String,
+
+        #[arg(long)]
+        #[clap(value_enum, default_value = "sha256")]
+        hash: Hash,
     },
 }
 
@@ -99,7 +108,7 @@ fn main() {
     };
 
     match cli.command {
-        Commands::Preprocess { r1cs, out_vk } => {
+        Commands::Preprocess { r1cs, out_vk, hash } => {
             let r1cs_data = File::open(r1cs).unwrap();
             let circom_circuit = load_r1cs_only(r1cs_data).unwrap();
             let mut circuit = generate_circuit(circom_circuit.clone(), Mode::INDEX).unwrap();
@@ -107,7 +116,7 @@ fn main() {
 
             let mut out_vk = File::create(out_vk).unwrap();
 
-            match cli.hash {
+            match hash {
                 Hash::BLAKE3 => {
                     let vk =
                         PlonkVerifierParams::<Blake3MerkleChannel>::preprocess(config, &circuit);
@@ -130,6 +139,7 @@ fn main() {
             r1cs,
             witness,
             out_proof,
+            hash,
         } => {
             let r1cs_data = File::open(r1cs).unwrap();
             let witness_data = File::open(witness).unwrap();
@@ -143,7 +153,7 @@ fn main() {
             let trace: PlonkCircuitTrace = PlonkCircuitTrace::from(&circuit);
             let mut out_proof = File::create(out_proof).unwrap();
 
-            match cli.hash {
+            match hash {
                 Hash::BLAKE3 => {
                     let (_, proof) = prove_plonk::<Blake3MerkleChannel>(config, trace);
                     out_proof
@@ -169,6 +179,7 @@ fn main() {
             proof,
             map,
             input,
+            hash,
         } => {
             let vk_data = File::open(vk).unwrap();
 
@@ -211,7 +222,7 @@ fn main() {
                 }
             }
 
-            match cli.hash {
+            match hash {
                 Hash::BLAKE3 => {
                     let vk: PlonkVerifierParams<Blake3MerkleChannel> =
                         bincode::deserialize_from(vk_data).unwrap();
