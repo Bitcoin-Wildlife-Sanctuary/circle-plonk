@@ -31,6 +31,13 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Show information about the circuit
+    Info {
+        /// Path to the R1CS file
+        #[arg(short, long)]
+        r1cs: String,
+    },
+
     /// Preprocess the circuit
     Preprocess {
         /// Path to the R1CS file
@@ -108,6 +115,14 @@ fn main() {
     };
 
     match cli.command {
+        Commands::Info { r1cs } => {
+            let r1cs_data = File::open(r1cs).unwrap();
+            let circom_circuit = load_r1cs_only(r1cs_data).unwrap();
+            println!("R1CS constraints: {}", circom_circuit.r1cs.constraints.len());
+            let mut circuit = generate_circuit(circom_circuit.clone(), Mode::INDEX).unwrap();
+            println!("Circle-Plonk constraints: {}", circuit.num_rows);
+            circuit.pad_to_next_power_of_2();
+        },
         Commands::Preprocess { r1cs, out_vk, hash } => {
             let r1cs_data = File::open(r1cs).unwrap();
             let circom_circuit = load_r1cs_only(r1cs_data).unwrap();
