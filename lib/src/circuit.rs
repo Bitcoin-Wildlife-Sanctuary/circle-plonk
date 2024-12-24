@@ -220,7 +220,7 @@ impl Circuit {
         if !inputs.is_empty() {
             let mut denominators = vec![];
             for &(id, v) in inputs.iter() {
-                denominators.push(M31::from(id) + alpha * v - z);
+                denominators.push(M31::from(id + 1) + alpha * v - z);
             }
 
             let mut denominator_inverses = vec![QM31::zero(); denominators.len()];

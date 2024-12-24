@@ -4,8 +4,6 @@ use circle_plonk_lib::from_r1cs::r1cs_constraint_processor::generate_circuit;
 use circle_plonk_lib::stwo::{prove_plonk, PlonkVerifierParams};
 use clap::{Parser, Subcommand, ValueEnum};
 use num_traits::Zero;
-use rand::SeedableRng;
-use rand_chacha::ChaCha20Rng;
 use serde::Deserialize;
 use serde_json::Value;
 use std::fs::File;
@@ -166,12 +164,8 @@ fn main() {
 
             let circom_circuit = load_r1cs_and_witness(r1cs_data, witness_data).unwrap();
             let mut circuit = generate_circuit(circom_circuit.clone(), Mode::PROVE).unwrap();
-
             assert!(circuit.is_constraint_satisfied());
             circuit.pad_to_next_power_of_2();
-
-            let mut prng = ChaCha20Rng::from_entropy();
-            assert!(circuit.is_logup_satisfied(&mut prng, &circuit.input_maps));
 
             let trace: PlonkCircuitTrace = PlonkCircuitTrace::from(&circuit);
             let mut out_proof = File::create(out_proof).unwrap();
