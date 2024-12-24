@@ -166,9 +166,9 @@ fn main() {
 
             let circom_circuit = load_r1cs_and_witness(r1cs_data, witness_data).unwrap();
             let mut circuit = generate_circuit(circom_circuit.clone(), Mode::PROVE).unwrap();
-            circuit.pad_to_next_power_of_2();
 
             assert!(circuit.is_constraint_satisfied());
+            circuit.pad_to_next_power_of_2();
 
             let mut prng = ChaCha20Rng::from_entropy();
             assert!(circuit.is_logup_satisfied(&mut prng, &circuit.input_maps));

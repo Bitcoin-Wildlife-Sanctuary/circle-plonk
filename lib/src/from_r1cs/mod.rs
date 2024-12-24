@@ -94,10 +94,10 @@ mod tests {
             let circuit = generate_circuit(test_circuit.clone(), Mode::PROVE).unwrap();
             assert!(circuit.is_constraint_satisfied());
             assert!(circuit.is_logup_satisfied(&mut prng, &circuit.input_maps));
-            assert_eq!(circuit.num_rows, 29265);
+            assert_eq!(circuit.num_rows, 29264);
         }
 
         let circuit = generate_circuit(test_circuit, Mode::INDEX).unwrap();
-        assert_eq!(circuit.num_rows, 29265);
+        assert_eq!(circuit.num_rows, 29264);
     }
 }
