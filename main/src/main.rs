@@ -110,8 +110,8 @@ fn main() {
     let cli = Cli::parse();
 
     let config = PcsConfig {
-        pow_bits: 10,
-        fri_config: FriConfig::new(0, 4, 64),
+        pow_bits: 20,
+        fri_config: FriConfig::new(0, 5, 16),
     };
 
     match cli.command {

@@ -225,8 +225,8 @@ mod tests {
             "For some unknown reason, blowup factor 2^1 doesn't work"
         );
         let config = PcsConfig {
-            pow_bits: 10,
-            fri_config: FriConfig::new(0, 4, 64),
+            pow_bits: 20,
+            fri_config: FriConfig::new(0, 5, 16),
         };
 
         let trace: PlonkCircuitTrace = PlonkCircuitTrace::from(&circuit);
