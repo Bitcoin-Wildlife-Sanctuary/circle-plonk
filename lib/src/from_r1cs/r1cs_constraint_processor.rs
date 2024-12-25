@@ -288,7 +288,7 @@ pub fn process_r1cs_addition_constraint(
     }
 
     if let Some(third_suitable) = third_suitable {
-        let inv = third_suitable.0.inverse().unwrap();
+        let inv = third_suitable.0.neg().inverse().unwrap();
         for item in c.iter_mut() {
             item.0 *= inv;
         }
