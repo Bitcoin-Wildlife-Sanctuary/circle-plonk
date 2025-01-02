@@ -379,5 +379,5 @@ pub fn get_linear_combination_type(row: &[(FM31, usize)]) -> LinearCombinationTy
     if !k.is_zero() {
         return LinearCombinationType::CONSTANT(k);
     }
-    return LinearCombinationType::NULLABLE;
+    LinearCombinationType::NULLABLE
 }

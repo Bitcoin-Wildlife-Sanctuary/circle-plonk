@@ -197,9 +197,52 @@ impl Circuit {
         let alpha = QM31::rand(prng);
         let z = QM31::rand(prng);
 
+        let mut debug = HashMap::<usize, (i32, M31)>::new();
+        let increase_count = |map: &mut HashMap<usize, (i32, M31)>, idx: usize, val: M31| {
+            if !map.contains_key(&idx) {
+                map.insert(idx, (1, val));
+            } else {
+                let v = *map.get(&idx).unwrap();
+                if v.1 != val {
+                    panic!("logup argument failed because value {} was referenced as {}, but previously reported value was {}",
+                        idx, val, v.1
+                    );
+                }
+                map.insert(idx, (v.0 + 1, v.1));
+            }
+        };
+        let decrease_count = |map: &mut HashMap<usize, (i32, M31)>,
+                              idx: usize,
+                              mult: usize,
+                              val: M31| {
+            if !map.contains_key(&idx) {
+                map.insert(idx, (-(mult as i32), val));
+            } else {
+                let v = *map.get(&idx).unwrap();
+                if v.1 != val {
+                    panic!("logup argument failed because value {} was referenced as {}, but previously reported value was {}",
+                             idx, val, v.1
+                    )
+                }
+                map.insert(idx, (v.0 - (mult as i32), v.1));
+            }
+        };
+
         let mut sum = QM31::zero();
 
         if self.num_rows > 0 {
+            for ((idx_c, (&idx_a, &idx_b)), &mult) in self
+                .idx_a
+                .iter()
+                .zip(self.idx_b.iter())
+                .enumerate()
+                .zip(self.mult.iter())
+            {
+                increase_count(&mut debug, idx_a, self.output_wires[idx_a]);
+                increase_count(&mut debug, idx_b, self.output_wires[idx_b]);
+                decrease_count(&mut debug, idx_c, mult, self.output_wires[idx_c]);
+            }
+
             let mut denominators = vec![];
             for (idx_c, (&idx_a, &idx_b)) in self.idx_a.iter().zip(self.idx_b.iter()).enumerate() {
                 denominators.push(M31::from(idx_a) + alpha * self.output_wires[idx_a] - z);
@@ -220,7 +263,8 @@ impl Circuit {
         if !inputs.is_empty() {
             let mut denominators = vec![];
             for &(id, v) in inputs.iter() {
-                denominators.push(M31::from(id + 1) + alpha * v - z);
+                decrease_count(&mut debug, id, 1, v);
+                denominators.push(M31::from(id) + alpha * v - z);
             }
 
             let mut denominator_inverses = vec![QM31::zero(); denominators.len()];
@@ -230,6 +274,17 @@ impl Circuit {
                 sum -= v;
             }
         }
+
+        for entry in debug.iter() {
+            if entry.1 .0 != 0 {
+                panic!(
+                    "Logup argument will fail because wire {} has a non-zero offset of {}",
+                    entry.0, entry.1 .0
+                );
+            }
+        }
+
+        assert_eq!(sum, QM31::zero());
 
         sum.is_zero()
     }
