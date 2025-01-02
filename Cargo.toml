@@ -3,9 +3,9 @@ members = ["lib", "main"]
 resolver = "2"
 
 [profile.release]
-opt-level = 2
+opt-level = 3
 lto = "thin"
-incremental = false
+incremental = true
 panic = 'abort'
 
 [profile.bench]
