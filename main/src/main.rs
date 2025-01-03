@@ -204,55 +204,18 @@ fn main() {
             hash,
         } => {
             let vk_data = File::open(vk).unwrap();
-
             let proof_data = File::open(proof).unwrap();
-
             let map_data = File::open(map).unwrap();
-
-            #[derive(Deserialize, Debug)]
-            struct InputMap(Vec<(String, usize, usize)>);
-            let map: InputMap = bincode::deserialize_from(map_data).unwrap();
-
-            let total_input = map.0.iter().map(|(_, _, n)| n).sum::<usize>();
-            let mut input_vec = vec![0u32; total_input];
-
-            let input_data = File::open(input).unwrap();
-            let input: Value = serde_json::from_reader(input_data).unwrap();
-
-            for (k, start, len) in map.0.iter() {
-                assert!(input.get(&k).is_some());
-                let entries = input.get(&k).unwrap();
-                if *len == 1 {
-                    if entries.is_array() {
-                        input_vec[*start - 1] =
-                            (entries[0].as_u64().unwrap() % ((1 << 31) - 1)) as u32;
-                    } else if entries.is_u64() {
-                        input_vec[*start - 1] =
-                            (entries.as_u64().unwrap() % ((1 << 31) - 1)) as u32;
-                    } else {
-                        unimplemented!()
-                    }
-                } else {
-                    assert!(entries.is_array());
-                    assert_eq!(entries.as_array().unwrap().len(), *len);
-
-                    let arr = entries.as_array().unwrap();
-                    for i in 0..*len {
-                        input_vec[*start - 1 + i] =
-                            (arr[i].as_u64().unwrap() % ((1 << 31) - 1)) as u32;
-                    }
-                }
-            }
 
             match hash {
                 Hash::BLAKE3 => {
-                    verify_proof::<Blake3MerkleChannel>(config, &vk_data, &proof_data, &input_vec)
+                    verify_proof::<Blake3MerkleChannel>(config, &vk_data, &proof_data, &map_data, &input)
                 }
                 Hash::SHA256 => {
-                    verify_proof::<Sha256MerkleChannel>(config, &vk_data, &proof_data, &input_vec)
+                    verify_proof::<Sha256MerkleChannel>(config, &vk_data, &proof_data, &map_data, &input)
                 }
                 Hash::POSEIDON31 => {
-                    verify_proof::<Poseidon31MerkleChannel>(config, &vk_data, &proof_data, &input_vec)
+                    verify_proof::<Poseidon31MerkleChannel>(config, &vk_data, &proof_data, &map_data, &input)
                 }
             }
         }
@@ -263,13 +226,51 @@ fn verify_proof<MC: MerkleChannel>(
     config: PcsConfig,
     vk_data: &File,
     proof_data: &File,
-    input_vec: &[u32],
+    map_data: &File,
+    input: &String,
 )
 where for<'a> <MC as MerkleChannel>::H : Deserialize<'a>
 {
     let vk: PlonkVerifierParams<MC> =
         bincode::deserialize_from(vk_data).unwrap();
     let max_degree = vk.log_n_rows + 1;
+
+    #[derive(Deserialize, Debug)]
+    struct InputMap(Vec<(String, usize, usize)>);
+    let map: InputMap = bincode::deserialize_from(map_data).unwrap();
+
+    let mut input_vec = vec![0u32; vk.num_inputs - 1];
+
+    let input_data = File::open(input).unwrap();
+    let input: Value = serde_json::from_reader(input_data).unwrap();
+
+    for (k, start, len) in map.0.iter() {
+        if *start < vk.num_inputs {
+            assert!(input.get(&k).is_some());
+            let entries = input.get(&k).unwrap();
+            if *len == 1 {
+                if entries.is_array() {
+                    input_vec[*start - 1] =
+                        (entries[0].as_u64().unwrap() % ((1 << 31) - 1)) as u32;
+                } else if entries.is_u64() {
+                    input_vec[*start - 1] =
+                        (entries.as_u64().unwrap() % ((1 << 31) - 1)) as u32;
+                } else {
+                    unimplemented!()
+                }
+            } else {
+                assert!(entries.is_array());
+                assert_eq!(entries.as_array().unwrap().len(), *len);
+
+                let arr = entries.as_array().unwrap();
+                for i in 0..*len {
+                    input_vec[*start - 1 + i] =
+                        (arr[i].as_u64().unwrap() % ((1 << 31) - 1)) as u32;
+                }
+            }
+        }
+    }
+
     let sizes = TreeVec::new(vec![
         vec![max_degree; 3],
         vec![max_degree; 8],
