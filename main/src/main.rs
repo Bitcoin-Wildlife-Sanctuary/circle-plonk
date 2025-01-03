@@ -73,6 +73,17 @@ enum Commands {
         hash: Hash,
     },
 
+    /// Test if a circuit is correct without generating the proof
+    DryRun {
+        /// Path to the R1CS file
+        #[arg(short, long)]
+        r1cs: String,
+
+        /// Path to the witness file
+        #[arg(short, long)]
+        witness: String,
+    },
+
     /// Verify a proof
     Verify {
         /// Path to the preprocessed parameters file
@@ -195,6 +206,20 @@ fn main() {
                         .unwrap();
                 }
             }
+        }
+        Commands::DryRun {
+            r1cs,
+            witness,
+        } => {
+            let r1cs_data = File::open(r1cs).unwrap();
+            let witness_data = File::open(witness).unwrap();
+
+            let circom_circuit = load_r1cs_and_witness(r1cs_data, witness_data).unwrap();
+            let circuit = generate_circuit(circom_circuit.clone(), Mode::PROVE).unwrap();
+            assert!(circuit.is_constraint_satisfied());
+
+            let mut prng = ChaCha20Rng::seed_from_u64(0);
+            assert!(circuit.is_logup_satisfied(&mut prng, &circuit.input_maps));
         }
         Commands::Verify {
             vk,
