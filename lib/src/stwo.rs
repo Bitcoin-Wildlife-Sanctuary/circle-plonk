@@ -49,6 +49,7 @@ impl From<&Circuit> for PlonkCircuitTrace {
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct PlonkVerifierParams<MC: MerkleChannel> {
     pub log_n_rows: u32,
+    pub num_inputs: usize,
     pub constant_tree_hash: <MC::H as MerkleHasher>::Hash,
 }
 
@@ -93,6 +94,7 @@ impl<MC: MerkleChannel> PlonkVerifierParams<MC> {
 
         Self {
             log_n_rows,
+            num_inputs: circuit.input_maps.len(),
             constant_tree_hash: commitment_scheme.trees.first().unwrap().commitment.root(),
         }
     }
